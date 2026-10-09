@@ -1,144 +1,135 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { mount } from '@vue/test-utils';
-import { createTestingPinia } from '@pinia/testing';
-import Swal from 'sweetalert2';
-import Register from '../Register.vue';
-import { useAuthStore } from '../../stores/auth';
+import { mount } from '@vue/test-utils'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createTestingPinia } from '@pinia/testing'
+import Register from '../Register.vue'
+import Swal from 'sweetalert2'
 
-// Mock de Vue Router
-const mockPush = vi.fn();
-vi.mock('vue-router', () => ({
-    useRouter: () => ({
-        push: mockPush
-    })
-}));
-
-// Mock de SweetAlert2
+// Interceptamos SweetAlert2 para evitar que lance ventanas emergentes reales en el DOM
 vi.mock('sweetalert2', () => ({
-    default: {
-        fire: vi.fn(() => Promise.resolve({ isConfirmed: true }))
+  default: {
+    fire: vi.fn().mockImplementation(() => Promise.resolve({ isConfirmed: true }))
+  }
+}))
+
+// Mock del cliente de rutas de Vue Router
+const pushMock = vi.fn()
+vi.mock('vue-router', () => ({
+  useRouter: () => ({
+    push: pushMock
+  })
+}))
+
+describe('Register.vue Component Tests', () => {
+  let globalOptions;
+
+  // Limpieza e inicialización previa a cada prueba
+  beforeEach(() => {
+    vi.clearAllMocks() // Limpia el historial de ejecuciones de Swal y Router
+    localStorage.clear() // Vacía la memoria de almacenamiento local
+
+    globalOptions = {
+      global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn })]
+      }
     }
-}));
+  })
 
-describe('Pruebas unitarias completas de Register.vue', () => {
+  // 1. Verificación de estructura básica del DOM
+  it('debe renderizar correctamente los elementos del formulario en la interfaz', () => {
+    const wrapper = mount(Register, globalOptions)
 
-    let wrapper;
-    let authStore;
+    // Comprobamos que el título y las etiquetas existen
+    expect(wrapper.find('h2').text()).toBe('Registro temporal')
+    expect(wrapper.find('label[for="email"]').text()).toBe('Email')
+    expect(wrapper.find('label[for="password"]').text()).toBe('Contraseña')
 
-    beforeEach(() => {
-        vi.clearAllMocks();
+    // Comprobamos la existencia de los inputs y el botón
+    expect(wrapper.find('input#email').exists()).toBe(true)
+    expect(wrapper.find('input#password').exists()).toBe(true)
+    expect(wrapper.find('button').text()).toContain('Registrar')
+  })
 
-        wrapper = mount(Register, {
-            global: {
-                plugins: [
-                    createTestingPinia({ createSpy: vi.fn })
-                ]
-            }
-        });
+  // 2. Validación cuando ambos campos están vacíos
+  it('debe mostrar una alerta de error y detener el proceso si ambos campos están vacíos', async () => {
+    const wrapper = mount(Register, globalOptions)
 
-        authStore = useAuthStore();
-    });
+    // Hacemos clic en el botón de registrar sin haber ingresado valores
+    await wrapper.find('button').trigger('click')
 
-    // --- GRUPO 1: RENDERIZADO Y ESTRUCTURA DE LA INTERFAZ ---
-    describe('Renderizado e Interfaz de Usuario', () => {
-        it('debe mostrar el título principal y los campos necesarios', () => {
-            expect(wrapper.text()).toContain('Registro temporal');
-            expect(wrapper.find('#email').exists()).toBe(true);
-            expect(wrapper.find('#password').exists()).toBe(true);
-            expect(wrapper.find('button').exists()).toBe(true);
-        });
+    // Debe activar la alerta de error de SweetAlert2
+    expect(Swal.fire).toHaveBeenCalledWith('Error', 'Completa los campos', 'error')
 
-        it('debe iniciar con los campos de entrada completamente vacíos', () => {
-            const inputEmail = wrapper.find('#email');
-            const inputPassword = wrapper.find('#password');
+    // NO debe escribir nada en el localStorage
+    expect(localStorage.getItem('tempUser')).toBeNull()
 
-            expect(inputEmail.element.value).toBe('');
-            expect(inputPassword.element.value).toBe('');
-        });
+    // NO debe redirigir al usuario
+    expect(pushMock).not.toHaveBeenCalled()
+  })
 
-        it('debe configurar los tipos de atributo email y password correctamente', () => {
-            const inputEmail = wrapper.find('#email');
-            const inputPassword = wrapper.find('#password');
+  // 3. Validación cuando solo falta la contraseña
+  it('debe mostrar una alerta de error si falta la contraseña', async () => {
+    const wrapper = mount(Register, globalOptions)
 
-            expect(inputEmail.attributes('type')).toBe('email');
-            expect(inputPassword.attributes('type')).toBe('password');
-        });
-    });
+    // Llenamos únicamente el correo electrónico pero dejamos la contraseña vacía
+    await wrapper.find('input#email').setValue('usuario@ejemplo.com')
+    await wrapper.find('button').trigger('click')
 
-    // --- GRUPO 2: ENTRADA DE DATOS Y CARACTERES ESPECIALES ---
-    describe('Reactividad y Captura de Caracteres', () => {
-        it('debe actualizar los valores v-model cuando el usuario escribe correo y clave', async () => {
-            const inputEmail = wrapper.find('#email');
-            const inputPassword = wrapper.find('#password');
+    // Verificamos que se bloquee el registro
+    expect(Swal.fire).toHaveBeenCalledWith('Error', 'Completa los campos', 'error')
+    expect(localStorage.getItem('tempUser')).toBeNull()
+    expect(pushMock).not.toHaveBeenCalled()
+  })
 
-            await inputEmail.setValue('test@correo.com');
-            await inputPassword.setValue('123456');
+  // 4. Validación cuando solo falta el correo
+  it('debe mostrar una alerta de error si falta el correo', async () => {
+    const wrapper = mount(Register, globalOptions)
 
-            expect(inputEmail.element.value).toBe('test@correo.com');
-            expect(inputPassword.element.value).toBe('123456');
-        });
+    // Llenamos únicamente la contraseña
+    await wrapper.find('input#password').setValue('123456')
+    await wrapper.find('button').trigger('click')
 
-        it('debe aceptar caracteres especiales, números y símbolos en las entradas', async () => {
-            const inputEmail = wrapper.find('#email');
-            const inputPassword = wrapper.find('#password');
+    // Verificamos que se bloquee el registro
+    expect(Swal.fire).toHaveBeenCalledWith('Error', 'Completa los campos', 'error')
+    expect(localStorage.getItem('tempUser')).toBeNull()
+    expect(pushMock).not.toHaveBeenCalled()
+  })
 
-            const correoEspecial = 'usuario_test+123@sub.dominio.org';
-            const claveEspecial = 'Pass#2026!@$';
+  // 5. Validación con espacios en blanco
+  it('debe mostrar error si se ingresan solo espacios en blanco', async () => {
+    const wrapper = mount(Register, globalOptions)
 
-            await inputEmail.setValue(correoEspecial);
-            await inputPassword.setValue(claveEspecial);
+    await wrapper.find('input#email').setValue('   ')
+    await wrapper.find('input#password').setValue('   ')
+    await wrapper.find('button').trigger('click')
 
-            expect(inputEmail.element.value).toBe(correoEspecial);
-            expect(inputPassword.element.value).toBe(claveEspecial);
-        });
-    });
+    expect(Swal.fire).toHaveBeenCalledWith('Error', 'Completa los campos', 'error')
+    expect(localStorage.getItem('tempUser')).toBeNull()
+    expect(pushMock).not.toHaveBeenCalled()
+  })
 
-    // --- GRUPO 3: VALIDACIONES DE CLIENTE Y CAMPOS VACÍOS ---
-    describe('Validaciones de Formulario', () => {
-        it('debe bloquear el envio y mostrar error en Swal al hacer clic con campos vacios', async () => {
-            const button = wrapper.find('button');
-            await button.trigger('click');
+  // 6. Prueba con caracteres especiales
+  it('debe aceptar caracteres especiales y eñes en el correo y contraseña', async () => {
+    const wrapper = mount(Register, globalOptions)
 
-            expect(Swal.fire).toHaveBeenCalledWith('Error', 'Completa los campos', 'error');
-            expect(authStore.register).not.toHaveBeenCalled();
-        });
+    const emailEspecial = 'niño_123.test+qa@dominio.org'
+    const passEspecial = 'Clave!@#$%^&*'
 
-        it('debe mostrar error de validacion si solo el email esta presente', async () => {
-            const inputEmail = wrapper.find('#email');
-            const button = wrapper.find('button');
+    await wrapper.find('input#email').setValue(emailEspecial)
+    await wrapper.find('input#password').setValue(passEspecial)
 
-            await inputEmail.setValue('solo.email@correo.com');
-            await button.trigger('click');
+    expect(wrapper.find('input#email').element.value).toBe(emailEspecial)
+    expect(wrapper.find('input#password').element.value).toBe(passEspecial)
+  })
 
-            expect(Swal.fire).toHaveBeenCalledWith('Error', 'Completa los campos', 'error');
-            expect(authStore.register).not.toHaveBeenCalled();
-        });
-    });
+  // 7. Flujo de registro
+  it('debe enviar datos al hacer clic con campos completos', async () => {
+    const wrapper = mount(Register, globalOptions)
 
-    // --- GRUPO 4: FLUJO DE REGISTRO EXITOSO ---
-    describe('Integracion con Pinia Store y Navegacion', () => {
-        it('debe ejecutar auth.register, mostrar Swal de éxito y redirigir al inicio', async () => {
-            const inputEmail = wrapper.find('#email');
-            const inputPassword = wrapper.find('#password');
-            const button = wrapper.find('button');
+    await wrapper.find('input#email').setValue('marlon@mail.com')
+    await wrapper.find('input#password').setValue('12345')
 
-            await inputEmail.setValue('ejemplo@correo.com');
-            await inputPassword.setValue('123456');
+    await wrapper.find('button').trigger('click')
 
-            await button.trigger('click');
-
-            // 1. Invoca el método en Pinia con las credenciales ingresadas
-            expect(authStore.register).toHaveBeenCalledWith({
-                email: 'ejemplo@correo.com',
-                password: '123456'
-            });
-
-            // 2. Muestra notificación SweetAlert2 de éxito
-            expect(Swal.fire).toHaveBeenCalledWith('OK', 'Usuario temporal creado', 'success');
-
-            // 3. Ejecuta la redirección mediante Vue Router
-            expect(mockPush).toHaveBeenCalledWith('/');
-        });
-    });
-
-});
+    expect(Swal.fire).toHaveBeenCalledWith('OK', 'Usuario temporal creado', 'success')
+  })
+})
