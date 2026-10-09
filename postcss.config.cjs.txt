@@ -1,0 +1,7 @@
+module.exports = {
+    plugins:{
+        tailwindcss: {},
+        autoprefixer: {},
+    }
+}
+//sirve paar porcesar y copilar las reglas de estilo de  tailwind css
